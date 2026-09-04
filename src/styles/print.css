@@ -1,0 +1,56 @@
+/*
+  Print / PDF path. Deliberately CSS rather than jsPDF: the browser's own
+  print engine handles pagination, fonts and images far more reliably, and
+  costs nothing in bundle size. "Print to PDF" is the PDF export.
+*/
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  body {
+    background: #fff !important;
+    color: #23262a !important;
+  }
+
+  .topbar,
+  .crumb,
+  .canvas-col,
+  .panel,
+  .mobile-list,
+  .no-print {
+    display: none !important;
+  }
+
+  .print-root {
+    display: block !important;
+  }
+
+  .scene-card {
+    width: 100% !important;
+    padding: 0 !important;
+    background: #fff !important;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .scene-card:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+}
+
+/* Off-screen staging area for PNG export. Kept renderable, not display:none. */
+.export-stage {
+  position: fixed;
+  left: -20000px;
+  top: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.print-root {
+  display: none;
+}

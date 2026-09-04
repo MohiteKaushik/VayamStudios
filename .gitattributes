@@ -1,0 +1,3 @@
+# Normalise to LF in the repository. Netlify builds on Linux; committing CRLF
+# from a Windows checkout makes diffs noisy and can upset tooling.
+* text=auto eol=lf
