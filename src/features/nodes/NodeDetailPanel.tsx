@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Plus, Trash2, X, Upload } from 'lucide-react';
 import type { Character, CrewMember, Project, Scene, SceneNode, Shot } from '../../lib/types';
 import { NODE_TYPES, STATUS_META } from '../../data/nodeSchemas';
@@ -168,6 +168,8 @@ function CrewPicker({
 
 export function NodeDetailPanel({ project, scene, selection, onSelect }: Props) {
   const store = useProjects();
+  /** The checklist row to put the cursor in — set when a row is created. */
+  const [focusItemId, setFocusItemId] = useState<string | null>(null);
 
   if (!selection) {
     return (
@@ -576,6 +578,9 @@ export function NodeDetailPanel({ project, scene, selection, onSelect }: Props) 
                 <input
                   className={`txt${item.done ? ' check-done' : ''}`}
                   value={item.text}
+                  placeholder="What needs doing?"
+                  aria-label="Checklist item"
+                  autoFocus={item.id === focusItemId}
                   onChange={(e) =>
                     setNode({
                       checklist: node.checklist.map((c) =>
@@ -583,6 +588,14 @@ export function NodeDetailPanel({ project, scene, selection, onSelect }: Props) 
                       ),
                     })
                   }
+                  onKeyDown={(e) => {
+                    // Enter starts the next item, the way any checklist should.
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    const next = { id: uid('ck'), text: '', done: false };
+                    setNode({ checklist: [...node.checklist, next] });
+                    setFocusItemId(next.id);
+                  }}
                 />
                 <button
                   className="icon-btn"
@@ -597,11 +610,11 @@ export function NodeDetailPanel({ project, scene, selection, onSelect }: Props) 
             ))}
             <button
               className="btn btn-sm"
-              onClick={() =>
-                setNode({
-                  checklist: [...node.checklist, { id: uid('ck'), text: '', done: false }],
-                })
-              }
+              onClick={() => {
+                const next = { id: uid('ck'), text: '', done: false };
+                setNode({ checklist: [...node.checklist, next] });
+                setFocusItemId(next.id);
+              }}
             >
               <Plus size={14} />
               Add item

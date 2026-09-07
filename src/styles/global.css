@@ -370,6 +370,13 @@ a {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;
+  /*
+    Without an explicit row track the implicit row is `auto`, which sizes to its
+    tallest child and overflows this fixed-height container — the whole page
+    scrolls and the detail panel never scrolls on its own. minmax(0, 1fr) pins
+    the row to the container so .flow and .panel each scroll internally.
+  */
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -591,16 +598,29 @@ a {
   flex: 0 0 auto;
 }
 
+/*
+  Looks like the panel's other inputs on purpose. These sit outside a .field
+  wrapper, so they inherited no styling and rendered as a transparent,
+  borderless, placeholder-less gap — a text box nobody could see was there.
+*/
 .check-row .txt {
   flex: 1;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid transparent;
-  padding: 3px 0;
+  min-width: 0;
+  background: #f6f3ec;
+  border: 1px solid var(--page-line);
+  border-radius: var(--r-sm);
+  padding: 7px 9px;
+  color: var(--ink);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.check-row .txt::placeholder {
+  color: #a49c8e;
 }
 
 .check-row .txt:focus {
-  border-bottom-color: var(--page-line);
+  background: #fffdf8;
+  border-color: #8d857a;
   outline: none;
 }
 
