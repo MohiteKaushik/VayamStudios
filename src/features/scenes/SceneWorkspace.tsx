@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ImageDown, Plus, X } from 'lucide-react';
 import { useProjects } from '../../store/projectStore';
-import { GraphCanvas } from '../graph/GraphCanvas';
-import type { Selection } from '../graph/GraphCanvas';
-import { MobileNodeList } from '../graph/MobileNodeList';
+import { SceneFlow } from '../flow/SceneFlow';
+import type { Selection } from '../../lib/selection';
 import { NodeDetailPanel } from '../nodes/NodeDetailPanel';
+import { PersonFilter } from '../people/PersonFilter';
+import { listPeople } from '../../lib/relevance';
 import { useIsCompact } from '../../components/useMediaQuery';
 import { CUSTOM_PRESETS } from '../../data/nodeSchemas';
 import { SceneCard } from '../export/SceneCard';
@@ -17,26 +18,31 @@ export function SceneWorkspace() {
   const nav = useNavigate();
   const compact = useIsCompact();
   const project = useProjects((s) => s.projects.find((p) => p.id === filmId));
-  const addShot = useProjects((s) => s.addShot);
   const addCustomNode = useProjects((s) => s.addCustomNode);
+  const personFilterId = useProjects((s) => s.personFilterId);
+  const setPersonFilter = useProjects((s) => s.setPersonFilter);
 
   const scene = project?.scenes.find((s) => s.id === sceneId);
 
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [activeShotId, setActiveShotId] = useState<string | undefined>(undefined);
   const [adding, setAdding] = useState(false);
   const [exporting, setExporting] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setSelection(null);
-    setActiveShotId(scene && scene.shots.length > 1 ? scene.shots[0].id : undefined);
-  }, [sceneId, scene?.shots.length]);
+  }, [sceneId]);
 
   const scenes = useMemo(
     () => (project ? [...project.scenes].sort((a, b) => a.orderIndex - b.orderIndex) : []),
     [project]
   );
+
+  const people = useMemo(
+    () => (project ? listPeople(project.crew, project.characters) : []),
+    [project]
+  );
+  const person = people.find((p) => p.id === personFilterId) ?? null;
 
   if (!project || !scene) {
     return (
@@ -47,12 +53,6 @@ export function SceneWorkspace() {
       </div>
     );
   }
-
-  const select = (s: Selection | null) => {
-    setSelection(s);
-    if (s?.kind === 'shot') setActiveShotId(s.id);
-    if (s?.kind === 'node' && s.shotId) setActiveShotId(s.shotId);
-  };
 
   const crumbNodeLabel = (() => {
     if (!selection) return null;
@@ -79,7 +79,7 @@ export function SceneWorkspace() {
   };
 
   const detail = (
-    <NodeDetailPanel project={project} scene={scene} selection={selection} onSelect={select} />
+    <NodeDetailPanel project={project} scene={scene} selection={selection} onSelect={setSelection} />
   );
 
   return (
@@ -94,17 +94,12 @@ export function SceneWorkspace() {
             <span className="crumb-sep">/</span>
             <select
               value={scene.id}
+              aria-label="Jump to scene"
+              className="crumb-select"
               onChange={(e) => nav(`/film/${project.id}/scene/${e.target.value}`)}
-              style={{
-                background: 'transparent',
-                border: '1px solid #2b333e',
-                borderRadius: 6,
-                padding: '3px 7px',
-                fontSize: 13,
-              }}
             >
               {scenes.map((s) => (
-                <option key={s.id} value={s.id} style={{ background: '#212832' }}>
+                <option key={s.id} value={s.id}>
                   {s.sceneNumber} — {s.title}
                 </option>
               ))}
@@ -116,13 +111,10 @@ export function SceneWorkspace() {
               </>
             )}
             <span className="spacer" />
+            <PersonFilter people={people} value={personFilterId} onChange={setPersonFilter} />
             <button className="btn btn-ghost btn-sm" onClick={() => setAdding(true)}>
               <Plus size={14} />
               Branch
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => addShot(project.id, scene.id)}>
-              <Plus size={14} />
-              Setup
             </button>
             <button className="btn btn-ghost btn-sm" onClick={doExport} disabled={exporting}>
               <ImageDown size={14} />
@@ -130,17 +122,14 @@ export function SceneWorkspace() {
             </button>
           </div>
 
-          {compact ? (
-            <MobileNodeList scene={scene} crew={project.crew} onSelect={select} />
-          ) : (
-            <GraphCanvas
-              scene={scene}
-              crew={project.crew}
-              selection={selection}
-              activeShotId={activeShotId}
-              onSelect={select}
-            />
-          )}
+          {/* Keyed by scene so the open setup resets when you move to another scene. */}
+          <SceneFlow
+            key={scene.id}
+            project={project}
+            scene={scene}
+            onSelect={setSelection}
+            person={person}
+          />
         </div>
 
         {!compact && detail}
@@ -167,7 +156,10 @@ export function SceneWorkspace() {
         <div className="modal-backdrop" onClick={() => setAdding(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>Add a branch to scene {scene.sceneNumber}</h2>
-            <p>Camera and composition belong to a setup. Everything else belongs to the scene.</p>
+            <p>
+              Camera and composition belong to a setup. Everything else belongs to the scene and is
+              shared by every setup in it.
+            </p>
             <div className="preset-grid">
               {CUSTOM_PRESETS.map((p) => (
                 <button
@@ -176,7 +168,7 @@ export function SceneWorkspace() {
                   onClick={() => {
                     const id = addCustomNode(project.id, scene.id, p.label, p.iconKey);
                     setAdding(false);
-                    select({ kind: 'node', id });
+                    setSelection({ kind: 'node', id });
                   }}
                 >
                   <Icon name={p.iconKey} size={16} />
@@ -189,7 +181,7 @@ export function SceneWorkspace() {
               onClick={() => {
                 const id = addCustomNode(project.id, scene.id, 'New branch', 'sparkles');
                 setAdding(false);
-                select({ kind: 'node', id });
+                setSelection({ kind: 'node', id });
               }}
             >
               <Plus size={15} />

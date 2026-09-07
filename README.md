@@ -31,8 +31,11 @@ FILM
            └── COMPOSITION setup-scoped
 ```
 
-A scene with one setup renders flat — the extra level is invisible until the
-scene actually needs it.
+**Storage scope is not display scope.** Expanding a setup shows all five
+categories together, because that is what a crew member needs in one place. The
+three scene-scoped ones are badged `Scene` and shared by every setup — a scene
+is one physical arrangement of people, lights and microphones, shot from several
+angles, so the director enters it once rather than once per setup.
 
 ## Where things live
 
@@ -50,6 +53,10 @@ scene actually needs it.
 | `src/features/blocking/` | 2D floor plan |
 | `src/features/export/` | Scene card, PNG export, print blueprint |
 | `src/features/project/` | Film settings — crew, characters, metadata |
+| `src/features/flow/` | **The vertical scene/shot flow and the collapsible shot card** |
+| `src/features/people/` | Crew + cast filter |
+| `src/features/media/` | Optional reference clip |
+| `src/lib/relevance.ts` | Who is involved in which scene and setup |
 
 ## Phases
 
@@ -70,6 +77,26 @@ project file export/import.
 
 Crew and characters were seeded but not editable before Phase 2, so a film you
 started yourself could never assign an owner or place anybody on the floor plan.
+
+**Iteration 2** — the flow, rebuilt around what the crew actually reads:
+
+- **Everything is vertical.** The film is a top-to-bottom spine of scenes; a
+  scene is a top-to-bottom sequence of setups. The horizontal fan is gone, and
+  with it `layout.ts`, `GraphCanvas` and `MobileNodeList` — the vertical flow
+  works on a phone unchanged, so there is one renderer instead of two.
+- **Setups are collapsed by default.** Opening a scene shows only the setup
+  cards. One setup expands at a time to reveal its five categories; only the
+  open one is mounted, so a forty-setup film renders one detail block.
+- **Crew filter.** Pick a person and the scenes and setups that are not theirs
+  dim rather than disappear — you still need to see where your work falls in the
+  film. Relevance is derived from explicit assignment, per-node owner overrides
+  and crew role defaults.
+- **Parallel scenes.** Consecutive scenes can be grouped as threads of one beat;
+  they render side by side and rejoin the spine. The scene list stays flat, so
+  ordering, duplication, shoot days and the blueprint are unaffected.
+- **Setup reorder and duplicate.** Duplicating carries the camera data over,
+  which is where most of the retyping was.
+- **Optional reference clip** per scene or setup, by link or upload.
 
 ## Extending it
 
@@ -94,6 +121,10 @@ step in `src/storage/migrations.ts`.
 - **PDF is browser print, not jsPDF.** More reliable pagination, better type,
   zero bundle cost.
 - **Export the project file often.** A browser cache clear removes everything.
+- **Uploaded reference clips are not in the project file.** A ten-second clip is
+  ~15 MB; inlined as base64 it would be ~20 MB of string in one JSON document
+  and would hang the tab. Clips keyed `video_*` are skipped by
+  `collectAssetIds`; a pasted link travels with the file instead.
 - **The shoot-day field commits on blur, not per keystroke.** Committing per
   keystroke moves the tile into a new day group mid-word, React remounts it, and
   focus is lost after the first character.

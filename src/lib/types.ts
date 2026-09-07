@@ -5,11 +5,14 @@
  *  - `id` is always an opaque UUID. Never displayed, never parsed.
  *  - `sceneNumber` / shot `label` are DISPLAY strings ("12A", "47pt2"). Never identity.
  *  - CAMERA + COMPOSITION are shot-scoped. BLOCKING/PRODUCTION/AUDIO are scene-scoped.
+ *    The shot view RENDERS all five together, but a scene's blocking, lighting and
+ *    mic plan are one physical arrangement shot from several angles — storing them
+ *    per shot would mean retyping them for each of a scene's setups.
  *  - Node data lives in a validated `fields` record so adding a field is a config
  *    change, not a schema migration.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type NodeType =
   | 'CAMERA'
@@ -94,6 +97,17 @@ export interface SceneNode {
   blocking?: BlockingData;
 }
 
+/**
+ * An optional reference clip — five to ten seconds showing a move, not footage.
+ * Either an external link or a file held in IndexedDB, never both in practice.
+ */
+export interface VideoRef {
+  /** YouTube, Vimeo, Drive, or any direct file URL. */
+  url?: string;
+  /** Uploaded clip, keyed into the IndexedDB asset store. */
+  assetId?: string;
+}
+
 export interface Shot {
   id: string;
   /** Display label: "1A", "1B", "2". */
@@ -103,6 +117,11 @@ export interface Shot {
   status: ShotStatus;
   /** CAMERA + COMPOSITION live here. */
   nodes: SceneNode[];
+  /** Reference stills. The first one is the collapsed card's thumbnail. */
+  referenceAssetIds: string[];
+  /** Crew on this setup beyond whoever already owns one of its nodes. */
+  assignedCrewIds: string[];
+  video?: VideoRef;
 }
 
 export interface Scene {
@@ -121,6 +140,28 @@ export interface Scene {
   nodes: SceneNode[];
   shots: Shot[];
   notes?: string;
+  /** Crew on this scene beyond whoever already owns one of its nodes. */
+  assignedCrewIds: string[];
+  video?: VideoRef;
+  /** Set when this scene is one thread of a parallel beat. See ParallelBranch. */
+  parallel?: ParallelBranch;
+}
+
+/**
+ * A temporary narrative split: the story cuts between two locations, then
+ * rejoins. Scenes carrying the same `groupId` are drawn side by side between a
+ * split and a merge connector.
+ *
+ * Deliberately NOT a nested structure. The scene list stays flat and linear, so
+ * ordering, duplication, deletion, shoot-day grouping and the print blueprint
+ * all keep working untouched — this is a rendering grouping, nothing more.
+ */
+export interface ParallelBranch {
+  groupId: string;
+  /** Branch heading: "POV A — Hero". */
+  label: string;
+  /** Character id when the thread follows a named character. */
+  pov?: string;
 }
 
 export interface Project {

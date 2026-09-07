@@ -49,6 +49,11 @@ const sceneNode = z.object({
   blocking: blocking.optional(),
 });
 
+/** Every v2 addition carries a default, so a v1 document validates unchanged. */
+const videoRef = z
+  .object({ url: z.string().optional(), assetId: z.string().optional() })
+  .optional();
+
 const shot = z.object({
   id: z.string(),
   label: z.string(),
@@ -56,6 +61,9 @@ const shot = z.object({
   description: z.string().optional(),
   status: z.enum(['planned', 'ready', 'shot']).default('planned'),
   nodes: z.array(sceneNode).default([]),
+  referenceAssetIds: z.array(z.string()).default([]),
+  assignedCrewIds: z.array(z.string()).default([]),
+  video: videoRef,
 });
 
 const scene = z.object({
@@ -73,6 +81,15 @@ const scene = z.object({
   nodes: z.array(sceneNode).default([]),
   shots: z.array(shot).default([]),
   notes: z.string().optional(),
+  assignedCrewIds: z.array(z.string()).default([]),
+  video: videoRef,
+  parallel: z
+    .object({
+      groupId: z.string(),
+      label: z.string(),
+      pov: z.string().optional(),
+    })
+    .optional(),
 });
 
 export const projectSchema = z.object({

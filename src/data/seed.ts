@@ -39,7 +39,13 @@ export function buildSampleProject(): Project {
     { id: uid('crew'), name: 'Sandeep Nair', role: 'Production designer', ownsNodeTypes: ['PRODUCTION' as const] },
     { id: uid('crew'), name: 'Aisha Rahman', role: 'Sound recordist', ownsNodeTypes: ['AUDIO' as const] },
     { id: uid('crew'), name: 'Tom Beckett', role: 'First AD', ownsNodeTypes: [] },
+    // Owns no node type on purpose: a gaffer is only on the scenes that need a
+    // rig, which is exactly the case the crew filter exists to answer.
+    { id: uid('crew'), name: 'Priya Menon', role: 'Gaffer', ownsNodeTypes: [] },
   ];
+
+  const gaffer = crew[5];
+  const firstAd = crew[4];
 
   const characters = [
     { id: uid('char'), name: 'Arun', playedBy: 'Vikram Das', color: '#E8B04B' },
@@ -111,6 +117,14 @@ export function buildSampleProject(): Project {
         { shotSize: 'Over the Shoulder', angle: 'Eye Level', movement: 'Static', framing: 'Mirror of G. Keep camera on the same side of the line.' }),
     ];
 
+    // A lighting rig only goes up for the master, the crossing and the meeting.
+    // Gives the crew filter something real to highlight at SHOT level, not just
+    // scene level.
+    for (const label of ['A', 'E', 'F']) {
+      const target = shots.find((x) => x.label === label);
+      if (target) target.assignedCrewIds = [gaffer.id];
+    }
+
     const blockingNode = sceneNodes[0];
     blockingNode.blocking = {
       marks: [
@@ -133,6 +147,7 @@ export function buildSampleProject(): Project {
       status: 'ready',
       shootDay: 'Day 1',
       referenceAssetIds: [],
+      assignedCrewIds: [gaffer.id, firstAd.id],
       nodes: sceneNodes,
       shots,
       notes: 'Golden hour is not available here \u2014 the building opposite blocks it. Shoot flat and grade cooler.',
@@ -185,6 +200,7 @@ export function buildSampleProject(): Project {
       status: 'planned',
       shootDay: 'Day 2',
       referenceAssetIds: [],
+      assignedCrewIds: [firstAd.id],
       nodes: sceneNodes,
       shots: [
         shot('A', 0, 'Master two shot from the door',
@@ -248,6 +264,7 @@ export function buildSampleProject(): Project {
       status: 'planned',
       shootDay: 'Day 2',
       referenceAssetIds: [],
+      assignedCrewIds: [gaffer.id],
       nodes: sceneNodes,
       shots: [
         shot('A', 0, 'Long lens profile of the walk',
@@ -296,6 +313,7 @@ export function buildSampleProject(): Project {
       status: 'planned',
       shootDay: 'Day 3',
       referenceAssetIds: [],
+      assignedCrewIds: [],
       nodes: sceneNodes,
       shots: [
         shot('A', 0, 'Macro on the hands',

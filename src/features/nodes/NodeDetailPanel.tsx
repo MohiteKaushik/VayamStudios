@@ -11,7 +11,8 @@ import { AssetImage } from '../../components/AssetImage';
 import { downscaleImage, putAsset } from '../../storage/assets';
 import { fovFromFocalLength, parseFocal } from '../../lib/optics';
 import { uid } from '../../lib/id';
-import type { Selection } from '../graph/GraphCanvas';
+import type { Selection } from '../../lib/selection';
+import { VideoRefField } from '../media/VideoRef';
 
 interface Props {
   project: Project;
@@ -121,6 +122,50 @@ function Participants({
   );
 }
 
+/**
+ * Explicit crew assignment, which is what makes the person filter useful for
+ * anyone who owns no node type — a gaffer is not the default owner of anything,
+ * so without this they would never light up anywhere.
+ */
+function CrewPicker({
+  crew,
+  assigned,
+  onToggle,
+}: {
+  crew: CrewMember[];
+  assigned: string[];
+  onToggle: (id: string) => void;
+}) {
+  if (!crew.length) {
+    return (
+      <div className="field">
+        <label>Crew on this</label>
+        <p className="sheet-empty">Add crew in Film settings first.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="field">
+      <label>Crew on this</label>
+      <div className="chip-row">
+        {crew.map((c) => {
+          const on = assigned.includes(c.id);
+          return (
+            <button
+              key={c.id}
+              className={`chip${on ? ' chip-on' : ''}`}
+              onClick={() => onToggle(c.id)}
+              title={c.role}
+            >
+              {c.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function NodeDetailPanel({ project, scene, selection, onSelect }: Props) {
   const store = useProjects();
 
@@ -220,6 +265,18 @@ export function NodeDetailPanel({ project, scene, selection, onSelect }: Props) 
             </div>
           </div>
 
+          <CrewPicker
+            crew={project.crew}
+            assigned={scene.assignedCrewIds}
+            onToggle={(id) =>
+              set({
+                assignedCrewIds: scene.assignedCrewIds.includes(id)
+                  ? scene.assignedCrewIds.filter((x) => x !== id)
+                  : [...scene.assignedCrewIds, id],
+              })
+            }
+          />
+
           <div className="sect">Reference images</div>
           <ImageStrip
             ids={scene.referenceAssetIds}
@@ -228,6 +285,9 @@ export function NodeDetailPanel({ project, scene, selection, onSelect }: Props) 
               set({ referenceAssetIds: scene.referenceAssetIds.filter((x) => x !== id) })
             }
           />
+
+          <div className="sect">Reference clip</div>
+          <VideoRefField value={scene.video} onChange={(video) => set({ video })} />
 
           <div className="sect">Notes</div>
           <div className="field">
@@ -276,9 +336,34 @@ export function NodeDetailPanel({ project, scene, selection, onSelect }: Props) 
               <option value="shot">Shot</option>
             </select>
           </div>
+          <CrewPicker
+            crew={project.crew}
+            assigned={shot.assignedCrewIds}
+            onToggle={(id) =>
+              set({
+                assignedCrewIds: shot.assignedCrewIds.includes(id)
+                  ? shot.assignedCrewIds.filter((x) => x !== id)
+                  : [...shot.assignedCrewIds, id],
+              })
+            }
+          />
+
+          <div className="sect">Reference images</div>
+          <ImageStrip
+            ids={shot.referenceAssetIds}
+            onAdd={(id) => set({ referenceAssetIds: [...shot.referenceAssetIds, id] })}
+            onRemove={(id) =>
+              set({ referenceAssetIds: shot.referenceAssetIds.filter((x) => x !== id) })
+            }
+          />
+
+          <div className="sect">Reference clip</div>
+          <VideoRefField value={shot.video} onChange={(video) => set({ video })} />
+
           {scene.shots.length > 1 && (
             <button
               className="btn btn-sm btn-danger"
+              style={{ marginTop: 16 }}
               onClick={() => {
                 store.deleteShot(project.id, scene.id, shot.id);
                 onSelect({ kind: 'scene', id: scene.id });

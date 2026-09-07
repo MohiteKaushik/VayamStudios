@@ -32,6 +32,8 @@ export function makeShot(label: string, orderIndex: number): Shot {
     orderIndex,
     status: 'planned',
     nodes: SHOT_SCOPED_TYPES.map((t) => makeNode(t)),
+    referenceAssetIds: [],
+    assignedCrewIds: [],
   };
 }
 
@@ -43,6 +45,7 @@ export function makeScene(sceneNumber: string, orderIndex: number, title = 'Unti
     title,
     status: 'planned',
     referenceAssetIds: [],
+    assignedCrewIds: [],
     nodes: SCENE_SCOPED_TYPES.map((t) => makeNode(t)),
     shots: [makeShot('A', 0)],
   };
@@ -63,9 +66,21 @@ export function ensureMandatory(scene: Scene): Scene {
     for (const t of SHOT_SCOPED_TYPES) {
       if (!sn.some((n) => n.type === t)) sn.push(makeNode(t));
     }
-    return { ...s, nodes: sn };
+    // Backfill the v2 arrays defensively: a Shot can reach here from an import
+    // path or older in-memory state that never passed through Zod's defaults.
+    return {
+      ...s,
+      nodes: sn,
+      referenceAssetIds: s.referenceAssetIds ?? [],
+      assignedCrewIds: s.assignedCrewIds ?? [],
+    };
   });
-  return { ...scene, nodes, shots: fixedShots };
+  return {
+    ...scene,
+    nodes,
+    shots: fixedShots,
+    assignedCrewIds: scene.assignedCrewIds ?? [],
+  };
 }
 
 /** Next shot label: A, B, C ... then A2, B2. Matches how sets actually label. */

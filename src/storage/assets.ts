@@ -27,6 +27,25 @@ export async function putAssetWithId(id: string, file: Blob): Promise<string> {
   return id;
 }
 
+/**
+ * Reference clips share the blob store but take a distinct id prefix, so
+ * collectAssetIds cannot sweep them into a project-file export. A ten-second
+ * 1080p clip is ~15 MB; inlined as base64 that is ~20 MB of string in one JSON
+ * document, which hangs the tab. Clips stay local; links travel.
+ */
+export async function putVideoAsset(file: Blob): Promise<string> {
+  const id = uid('video');
+  await set(PREFIX + id, file);
+  return id;
+}
+
+export function isVideoAssetId(id: string): boolean {
+  return id.startsWith('video_');
+}
+
+/** Refuse absurd uploads before they reach IndexedDB and eat the quota. */
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+
 export async function getAssetUrl(id: string): Promise<string | null> {
   const cached = urlCache.get(id);
   if (cached) return cached;

@@ -5,10 +5,12 @@ import type {
   FieldValue,
   NodeType,
   Project,
+  ParallelBranch,
   Scene,
   SceneNode,
   Shot,
 } from '../lib/types';
+import { SCHEMA_VERSION } from '../lib/types';
 import { ensureMandatory, makeNode, makeScene, makeShot, nextShotLabel } from '../lib/factory';
 import { buildSampleProject } from '../data/seed';
 import { loadWorkspace, saveWorkspace } from '../storage/persistence';
@@ -20,6 +22,15 @@ interface State {
   loadError?: string;
   loadRaw?: string;
   saveError?: string;
+
+  /**
+   * Which person the crew filter is set to, or null for everyone. UI state, not
+   * project data: it lives here so the choice survives moving between the film
+   * overview and a scene, and it is deliberately outside `projects` so it is
+   * never written to storage.
+   */
+  personFilterId: string | null;
+  setPersonFilter: (id: string | null) => void;
 
   init: () => Promise<void>;
   addSampleProject: () => string;
@@ -36,7 +47,13 @@ interface State {
 
   addShot: (projectId: string, sceneId: string) => string;
   updateShot: (projectId: string, sceneId: string, shotId: string, patch: Partial<Shot>) => void;
+  duplicateShot: (projectId: string, sceneId: string, shotId: string) => string;
+  moveShot: (projectId: string, sceneId: string, shotId: string, delta: -1 | 1) => void;
   deleteShot: (projectId: string, sceneId: string, shotId: string) => void;
+
+  makeParallel: (projectId: string, sceneId: string) => void;
+  updateParallel: (projectId: string, sceneId: string, patch: Partial<ParallelBranch>) => void;
+  clearParallel: (projectId: string, sceneId: string) => void;
 
   updateNode: (
     projectId: string,
@@ -107,6 +124,11 @@ function reindex(scenes: Scene[]): Scene[] {
   return scenes.map((s, i) => (s.orderIndex === i ? s : { ...s, orderIndex: i }));
 }
 
+/** The same, for the shots inside one scene. */
+function reindexShots(shots: Shot[]): Shot[] {
+  return shots.map((s, i) => (s.orderIndex === i ? s : { ...s, orderIndex: i }));
+}
+
 /**
  * Fresh ids for the copy — node, shot and checklist ids must not collide, or
  * patchNodeInScene would edit both scenes at once.
@@ -152,12 +174,17 @@ function cloneScene(src: Scene, siblings: Scene[]): Scene {
     ),
     status: 'planned',
     referenceAssetIds: [...src.referenceAssetIds],
+    assignedCrewIds: [...src.assignedCrewIds],
     nodes: src.nodes.map(cloneNode),
     shots: src.shots.map((s) => ({
       ...s,
       id: uid('shot'),
       status: 'planned',
       nodes: s.nodes.map(cloneNode),
+      // Copy the arrays, or the duplicate shares them and editing one scene's
+      // crew list silently edits the other's.
+      referenceAssetIds: [...s.referenceAssetIds],
+      assignedCrewIds: [...s.assignedCrewIds],
     })),
   };
 }
@@ -181,6 +208,9 @@ export const useProjects = create<State>((set, get) => {
   return {
     projects: [],
     ready: false,
+    personFilterId: null,
+
+    setPersonFilter: (id) => set({ personFilterId: id }),
 
     init: async () => {
       const res = await loadWorkspace();
@@ -202,7 +232,7 @@ export const useProjects = create<State>((set, get) => {
       const now = new Date().toISOString();
       const p: Project = {
         id: uid('proj'),
-        schemaVersion: 1,
+        schemaVersion: SCHEMA_VERSION,
         title: title || 'Untitled film',
         crew: [],
         characters: [],
@@ -296,10 +326,108 @@ export const useProjects = create<State>((set, get) => {
         shots: sc.shots.map((s) => (s.id === shotId ? { ...s, ...patch } : s)),
       })),
 
+    /**
+     * Copies a setup with its technical data intact — most setups on a scene
+     * share a body, lens and frame rate, so re-entering them is the single
+     * biggest source of typing. Lands directly after its original.
+     */
+    duplicateShot: (projectId, sceneId, shotId) => {
+      const p = get().projects.find((x) => x.id === projectId);
+      const scene = p?.scenes.find((s) => s.id === sceneId);
+      const src = scene?.shots.find((s) => s.id === shotId);
+      if (!scene || !src) return '';
+
+      const copy: Shot = {
+        ...src,
+        id: uid('shot'),
+        label: nextShotLabel(scene.shots.map((s) => s.label)),
+        status: 'planned',
+        nodes: src.nodes.map(cloneNode),
+        referenceAssetIds: [...src.referenceAssetIds],
+        assignedCrewIds: [...src.assignedCrewIds],
+        video: src.video ? { ...src.video } : undefined,
+      };
+
+      mutateScene(projectId, sceneId, (sc) => {
+        const ordered = [...sc.shots].sort((a, b) => a.orderIndex - b.orderIndex);
+        ordered.splice(ordered.findIndex((s) => s.id === shotId) + 1, 0, copy);
+        return { ...sc, shots: reindexShots(ordered) };
+      });
+      return copy.id;
+    },
+
+    /**
+     * Moves a setup in shooting order. The label travels with it unchanged:
+     * like sceneNumber, a shot label is a display string the crew already knows,
+     * not a position.
+     */
+    moveShot: (projectId, sceneId, shotId, delta) =>
+      mutateScene(projectId, sceneId, (sc) => {
+        const ordered = [...sc.shots].sort((a, b) => a.orderIndex - b.orderIndex);
+        const i = ordered.findIndex((s) => s.id === shotId);
+        const j = i + delta;
+        if (i < 0 || j < 0 || j >= ordered.length) return sc;
+        [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+        return { ...sc, shots: reindexShots(ordered) };
+      }),
+
     deleteShot: (projectId, sceneId, shotId) =>
       mutateScene(projectId, sceneId, (sc) =>
-        sc.shots.length <= 1 ? sc : { ...sc, shots: sc.shots.filter((s) => s.id !== shotId) }
+        sc.shots.length <= 1
+          ? sc
+          : { ...sc, shots: reindexShots(sc.shots.filter((s) => s.id !== shotId)) }
       ),
+
+    /**
+     * Pairs this scene with the one after it as parallel threads of one beat.
+     * Extends an existing group rather than starting a second one, so calling it
+     * again on the same scene adds a third thread.
+     */
+    makeParallel: (projectId, sceneId) =>
+      mutate(projectId, (p) => {
+        const ordered = [...p.scenes].sort((a, b) => a.orderIndex - b.orderIndex);
+        const i = ordered.findIndex((s) => s.id === sceneId);
+        if (i < 0 || i + 1 >= ordered.length) return p;
+
+        const a = ordered[i];
+        const b = ordered[i + 1];
+        if (b.parallel && b.parallel.groupId === a.parallel?.groupId) return p;
+
+        const groupId = a.parallel?.groupId ?? uid('par');
+        const name = (s: Scene, fallback: string) =>
+          s.parallel?.label ?? s.location ?? s.title ?? fallback;
+
+        ordered[i] = { ...a, parallel: { ...a.parallel, groupId, label: name(a, 'Thread A') } };
+        ordered[i + 1] = { ...b, parallel: { ...b.parallel, groupId, label: name(b, 'Thread B') } };
+        return { ...p, scenes: ordered };
+      }),
+
+    updateParallel: (projectId, sceneId, patch) =>
+      mutateScene(projectId, sceneId, (sc) =>
+        sc.parallel ? { ...sc, parallel: { ...sc.parallel, ...patch } } : sc
+      ),
+
+    /** Also dissolves the group when only one thread would be left in it. */
+    clearParallel: (projectId, sceneId) =>
+      mutate(projectId, (p) => {
+        const target = p.scenes.find((s) => s.id === sceneId);
+        const groupId = target?.parallel?.groupId;
+        if (!groupId) return p;
+
+        const remaining = p.scenes.filter(
+          (s) => s.id !== sceneId && s.parallel?.groupId === groupId
+        );
+        const dissolve = remaining.length <= 1;
+
+        return {
+          ...p,
+          scenes: p.scenes.map((s) => {
+            if (s.id === sceneId) return { ...s, parallel: undefined };
+            if (dissolve && s.parallel?.groupId === groupId) return { ...s, parallel: undefined };
+            return s;
+          }),
+        };
+      }),
 
     updateNode: (projectId, sceneId, nodeId, patch) =>
       mutateScene(projectId, sceneId, (sc) =>
